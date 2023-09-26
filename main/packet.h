@@ -8,9 +8,7 @@ static uint8_t device_id = 0;
 static bool changed_device_id = false;
 static uint16_t last_message_id = 0;
 
-static enum error_type {
-    NONE, LARGE_PACKET
-} error = NONE;
+typedef enum { NONE, LARGE_PACKET } error_type;
 
 struct header {
     uint8_t sender_id;
