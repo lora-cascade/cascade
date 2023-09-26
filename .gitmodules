@@ -1,0 +1,3 @@
+[submodule "sx127x"]
+	path = sx127x
+	url = https://github.com/dernasherbrezon/sx127x.git
