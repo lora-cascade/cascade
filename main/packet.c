@@ -10,22 +10,22 @@ void set_device_id(uint8_t id) {
     device_id = id;
 }
 
-void set_error(enum error_type err) {
+void set_error(error_type err) {
     error = err;
 }
 
-enum error_type get_error() {
+error_type get_error() {
     return error;
 }
 
-struct packet create_packet(char* data, uint8_t data_length) {
-    struct header header = {
+packet create_packet(char* data, uint8_t data_length) {
+    header header = {
         .sender_id = device_id,
         .message_id = last_message_id++,
         .data_length = data_length,
     };
 
-    struct packet packet = {
+    packet packet = {
         .header = header,
         .data = data,
     };
