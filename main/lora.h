@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <sx127x.h>
+#include "common.h"
 
 #define SCK 5
 #define MISO 19
@@ -21,7 +22,9 @@
 #define SPREADING_FACTOR SX127x_SF_9
 #define BANDWIDTH SX127x_BW_125000
 
-sx127x* device = NULL;
+static sx127x* device = NULL;
+
+static TaskHandle_t handle_interrupt;
 
 int32_t init_lora();
 
@@ -30,5 +33,7 @@ int16_t send_message(char* message);
 static void tx_callback(sx127x* device);
 
 static void rx_callback(sx127x* device, uint8_t* data, uint16_t data_length);
+
+static void task_handler(void* arg);
 
 #endif  // LORA_H_

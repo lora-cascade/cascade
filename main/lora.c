@@ -1,6 +1,8 @@
 #include "lora.h"
+#include <stddef.h>
 #include "driver/spi_master.h"
 #include "esp_err.h"
+#include "freertos/projdefs.h"
 #include "hal/spi_types.h"
 #include "sx127x.h"
 
@@ -9,6 +11,13 @@ static void tx_callback(sx127x* device) {
 }
 
 static void rx_callback(sx127x* device, uint8_t* data, uint16_t data_length) {}
+
+static void task_handler(void* arg) {
+    while (1) {
+        vTaskSuspend(NULL);
+        sx127x_handle_interrupt((sx127x*)arg);
+    }
+}
 
 int32_t init_lora() {
     spi_bus_config_t config = {
@@ -43,6 +52,14 @@ int32_t init_lora() {
     ESP_ERROR_CHECK(sx127x_lora_set_syncword(SYNCWORD, device));
     ESP_ERROR_CHECK(sx127x_set_preamble_length(8, device));
     sx127x_tx_set_callback(tx_callback, device);
+
+    BaseType_t task_code =
+        xTaskCreatePinnedToCore(task_handler, "handle lora", 8196, device, 2, &handle_interrupt, LORA_CORE);
+    if (task_code != pdPASS) {
+        ESP_LOGE(TAG, "can't create task %d", task_code);
+        sx127x_destroy(device);
+        return -1;
+    }
 
     return 0;
 }
