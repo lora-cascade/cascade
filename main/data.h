@@ -6,10 +6,10 @@
 typedef struct {
     uint8_t* data;
     uint8_t size;
-} data;
+} data_t;
 
 typedef struct {
-    data* list;
+    data_t* list;
     uint16_t size;
     uint16_t capacity;
 } data_list;
