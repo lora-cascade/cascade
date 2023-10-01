@@ -13,4 +13,4 @@ jobs:
       with:
         esp_idf_version: v5.1
         target: esp32
-        path: 'main'
+        path: './'
