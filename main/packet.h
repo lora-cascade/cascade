@@ -16,7 +16,7 @@ typedef struct {
 
 typedef struct {
     header_t header;
-    char data[];
+    uint8_t data[];
 } __attribute__((packed)) packet_t;
 
 uint8_t get_device_id();

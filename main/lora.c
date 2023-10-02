@@ -1,36 +1,64 @@
 #include "lora.h"
-#include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "data.h"
-#include "driver/spi_master.h"
-#include "esp_err.h"
 #include "freertos/projdefs.h"
-#include "hal/spi_types.h"
 #include "packet.h"
 #include "sx127x.h"
+
+static sx127x* device = NULL;
+
+static TaskHandle_t handle_interrupt;
+
+static QueueHandle_t receive_queue;
+
+static QueueHandle_t send_queue;
+
+static void pop_queue(QueueHandle_t* handle);
+
+static data_t get_next_message();
+
+static bool has_next_message();
+
+static void add_message(packet_t* packet);
+
+static void tx_callback(sx127x* device);
+
+static void rx_callback(sx127x* device, uint8_t* data, uint16_t data_length);
+
+static void cad_callback(sx127x* device, int cad_detected);
+
+static void task_handler(void* arg);
+
+bool waited = false;
 
 static void tx_callback(sx127x* device) {
     if (has_next_message()) {
         data_t data = get_next_message();
+        uint16_t id = *(uint16_t*)&data.data[1];
+        /* printf("Sent %d\n", id); */
         if (data.data != NULL) {
             ESP_ERROR_CHECK(sx127x_lora_tx_set_for_transmission(data.data, data.size, device));
             free(data.data);
         }
     }
 
-    ESP_ERROR_CHECK(sx127x_set_opmod(SX127x_MODE_CAD, SX127x_MODULATION_LORA, device));
+    ESP_ERROR_CHECK(sx127x_set_opmod(SX127x_MODE_TX, SX127x_MODULATION_LORA, device));
+}
+
+void IRAM_ATTR handle_interrupt_fromisr(void* arg) {
+    xTaskResumeFromISR(handle_interrupt);
 }
 
 static void rx_callback(sx127x* device, uint8_t* data, uint16_t data_length) {
     if (data_length < 5) {
-        printf("ERROR: data of size %d is too small", data_length);
+        printf("ERROR: data of size %d is too small\n", data_length);
         return;
     }
 
     packet_t* packet = malloc(256);
+    if (data_length - sizeof(header_t) > 255) {
+        printf("ERRRRORRR\n");
+    }
+    /* printf("Message id %d\n", *(uint16_t*)&data[1]); */
     memcpy(packet->data, data + sizeof(header_t), data_length - sizeof(header_t));
     packet->header.data_length = data_length - sizeof(header_t);
     packet->header.sender_id = data[0];
@@ -44,7 +72,14 @@ static void rx_callback(sx127x* device, uint8_t* data, uint16_t data_length) {
 static void cad_callback(sx127x* device, int cad_detected) {
     if (cad_detected == 0) {
         if (has_next_message()) {
-            ESP_ERROR_CHECK(sx127x_set_opmod(SX127x_MODE_TX, SX127x_MODULATION_LORA, device));
+            if (!waited) {
+                vTaskDelay((rand() % 100) / portTICK_PERIOD_MS);
+                waited = true;
+                ESP_ERROR_CHECK(sx127x_set_opmod(SX127x_MODE_CAD, SX127x_MODULATION_LORA, device));
+            } else {
+                waited = false;
+                ESP_ERROR_CHECK(sx127x_set_opmod(SX127x_MODE_TX, SX127x_MODULATION_LORA, device));
+            }
         } else {
             ESP_ERROR_CHECK(sx127x_set_opmod(SX127x_MODE_CAD, SX127x_MODULATION_LORA, device));
         }
@@ -100,20 +135,33 @@ int32_t init_lora() {
     sx127x_rx_set_callback(rx_callback, device);
     sx127x_lora_cad_set_callback(cad_callback, device);
 
-    BaseType_t task_code =
-        xTaskCreatePinnedToCore(task_handler, "handle lora", 8196, device, 2, &handle_interrupt, LORA_CORE);
+    BaseType_t task_code = xTaskCreatePinnedToCore(task_handler, "handle lora", 8196, device, 2, &handle_interrupt, 1);
     if (task_code != pdPASS) {
-        ESP_LOGE(TAG, "can't create task %d", task_code);
         sx127x_destroy(device);
         return -1;
     }
+
+    gpio_set_direction((gpio_num_t)DIO0, GPIO_MODE_INPUT);
+    gpio_pulldown_en((gpio_num_t)DIO0);
+    gpio_pullup_dis((gpio_num_t)DIO0);
+    gpio_set_intr_type((gpio_num_t)DIO0, GPIO_INTR_POSEDGE);
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add((gpio_num_t)DIO0, handle_interrupt_fromisr, (void*)device);
+
+    sx127x_tx_header_t header = {
+        .enable_crc = true,
+        .coding_rate = SX127x_CR_4_5,
+    };
+    ESP_ERROR_CHECK(sx127x_lora_tx_set_explicit_header(&header, device));
+
+    ESP_ERROR_CHECK(sx127x_set_opmod(SX127x_MODE_CAD, SX127x_MODULATION_LORA, device));
 
     return 0;
 }
 
 static data_t get_next_message() {
     packet_t* packet = NULL;
-    if (xQueueReceive(send_queue, &packet, 0) != pdTRUE) {
+    if (xQueueReceiveFromISR(send_queue, &packet, 0) != pdTRUE) {
         data_t data = {
             .data = NULL,
             .size = 0,
@@ -129,19 +177,19 @@ static data_t get_next_message() {
 }
 
 static bool has_next_message() {
-    return uxQueueMessagesWaiting(send_queue) != 0;
+    return uxQueueMessagesWaitingFromISR(send_queue) != 0;
 }
 
 static void add_message(packet_t* data) {
-    if (xQueueSend(receive_queue, &data, 0) != pdTRUE) {
+    if (xQueueSendFromISR(receive_queue, &data, 0) != pdTRUE) {
         pop_queue(&receive_queue);
-        xQueueSend(receive_queue, &data, 0);
+        xQueueSendFromISR(receive_queue, &data, 0);
     }
 }
 
 static void pop_queue(QueueHandle_t* handle) {
     packet_t* data = NULL;
-    xQueueReceive(*handle, &data, 0);
+    xQueueReceiveFromISR(*handle, &data, 0);
     if (data != NULL) {
         free(data);
     }
@@ -149,21 +197,23 @@ static void pop_queue(QueueHandle_t* handle) {
 
 int16_t send_message(uint8_t* message, uint8_t data_length) {
     packet_t* packet = create_packet(message, data_length);
-    if (xQueueSend(send_queue, &packet, 0) != pdTRUE) {
+    if (xQueueSendFromISR(send_queue, &packet, 0) != pdTRUE) {
         pop_queue(&send_queue);
-        xQueueSend(send_queue, &packet, 0);
+        xQueueSendFromISR(send_queue, &packet, 0);
     }
 
     return packet->header.message_id;
 }
 
 bool has_message() {
-    return uxQueueMessagesWaiting(receive_queue) != 0;
+    return uxQueueMessagesWaitingFromISR(receive_queue) != 0;
 }
 
 // returns data allocated by malloc
 packet_t* get_message() {
-    packet_t* data = NULL;
-    xQueueReceive(receive_queue, &data, 0);
+    packet_t* data;
+    if (xQueueReceiveFromISR(receive_queue, &data, 0) != pdTRUE) {
+        return NULL;
+    }
     return data;
 }
