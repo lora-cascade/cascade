@@ -10,7 +10,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sx127x.h>
 #include "common.h"
 #include "data.h"
 #include "driver/spi_master.h"
@@ -18,7 +17,7 @@
 #include "freertos/projdefs.h"
 #include "hal/spi_types.h"
 #include "packet.h"
-#include "sx127x.h"
+#include <lora.h>
 
 #define SCK 5
 #define MISO 19
@@ -27,13 +26,14 @@
 #define RST 23
 #define DIO0 26
 
-#define FREQUENCY 910200012
 #define SYNCWORD 37
+#define SPREADING_FACTOR 7
+#define BANDWIDTH 7
+#define CODING_RATE 1
 
-#define SPREADING_FACTOR SX127x_SF_9
-#define BANDWIDTH SX127x_BW_125000
+#define MAX_QUEUE_SIZE 100
 
-#define MAX_QUEUE_SIZE 10
+int get_size();
 
 int32_t init_lora();
 
