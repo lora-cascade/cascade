@@ -6,6 +6,5 @@
 void app_main() {
     int32_t result = init_lora();
     srand(esp_random());
-    printf("result %ld\n", result);
     example();
 }

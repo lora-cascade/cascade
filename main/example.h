@@ -7,34 +7,36 @@
 #include <freertos/task.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include "lora.h"
+#include "lora_interface.h"
 #include "packet.h"
 
 const char charset[] = "abcdefghijklmnopqrstuvwxyz0123456789";
+int counter = 0;
 
 void example() {
     while (1) {
-        vTaskDelay((rand() % 1000) / portTICK_PERIOD_MS);
+        vTaskDelay(10 / portTICK_PERIOD_MS);
         if (has_message()) {
             packet_t* message = get_message();
             if (message == NULL) {
                 printf("WHYYYYYYYYYYYYYY\n");
+                continue;
             }
-            printf("Received message id %d: ", message->header.message_id);
-            for (int i = 0; i < message->header.data_length; i++) {
-                printf("%c", message->data[i]);
-            }
-            printf("\n");
+            printf("Received message id %d: %.*s\n", message->header.message_id, message->header.data_length, message->data);
+            char data[255];
+            int length = sprintf(data, "%.11s %d", message->data, message->header.message_id);
+            send_message((uint8_t*)data, length);
             free(message);
+            counter = 0;
+            continue;
         }
-
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-        uint8_t data[10];
-        for (int i = 0; i < 10; i++) {
-            data[i] = charset[rand() % (sizeof(charset) - 1)];
+        if (counter > 1000) {
+            printf("counter activated\n");
+            send_message((uint8_t*)"hello world", 11);
+            counter = 0;
+            continue;
         }
-        int16_t id = send_message(data, 10);
-        printf("Sent message id %d: %.10s\n", id, data);
+        counter++;
     }
 }
 
