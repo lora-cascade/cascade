@@ -19,7 +19,24 @@ static void add_message(packet_t* packet);
 
 static void task_handler(void* arg);
 
-bool waited = false;
+int32_t backoff_round = 0;
+
+static int64_t get_wait_time() {
+    int32_t upper_bound = 1;
+
+    for (int i = 0; i < backoff_round; i++) {
+        upper_bound *= 2;
+    }
+    int32_t wait_slots = rand() % upper_bound;
+
+    return CSMA_SLOT_TIME_US * (int64_t)wait_slots;
+}
+
+static int64_t get_current_time_us() {
+    struct timeval val;
+    gettimeofday(&val, NULL);
+    return (int64_t)val.tv_usec;
+}
 
 static void handle_receive() {
     packet_t* packet = malloc(256);
@@ -52,6 +69,7 @@ static void task_handler(void* arg) {
 }
 
 int32_t init_lora() {
+    srand(esp_random());
     receive_queue = xQueueCreate(MAX_QUEUE_SIZE, sizeof(packet_t*));
     send_queue = xQueueCreate(MAX_QUEUE_SIZE, sizeof(packet_t*));
 
