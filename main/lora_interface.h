@@ -18,6 +18,8 @@
 #include "hal/spi_types.h"
 #include "packet.h"
 #include <lora.h>
+#include <sys/time.h>
+#include <esp_random.h>
 
 #define SCK 5
 #define MISO 19
@@ -32,6 +34,8 @@
 #define CODING_RATE 1
 
 #define MAX_QUEUE_SIZE 100
+
+#define CSMA_SLOT_TIME_US (int64_t)20
 
 int get_size();
 
