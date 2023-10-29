@@ -15,3 +15,8 @@ The serial interface process is implemented as a FreeRTOS Task
 (https://www.freertos.org/taskandcr.html)
 and makes use of FreeRTOS Queues
 (https://www.freertos.org/Embedded-RTOS-Queues.html).
+
+## Protocol definition
+
+https://docs.google.com/document/d/11GAniZGIQtGn67Gn8hsuBswVlcI47bLu2ta6np2zhGA/edit
+
