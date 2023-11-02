@@ -3,3 +3,5 @@ dependencies.lock
 compile_commands.json
 .clangd
 .~
+sdkconfig.old
+
