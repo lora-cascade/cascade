@@ -1,8 +1,16 @@
 
+/*
+
+  Design based on the concept of a "tagged union" (https://en.wikipedia.org/wiki/Tagged_union).
+  
+*/
+
+// Reply symbols
 #define SI_FALSE                  0x00
 #define SI_TRUE                   0x01
 #define SI_END_OF_STATUS_MESSAGES 0x02
 
+// Command/reply types
 #define SI_SEND_MESSAGE                     0x00
 #define SI_POLL_FOR_MESSAGES                0x01
 #define SI_LIST_NETWORK_DEVICES             0x02
@@ -12,9 +20,38 @@
 
 #define SI_MAX_MESSAGE_LENGTH 255
 
-typedef struct {
-    unsigned char receiver_id;
-    unsigned char length;
-    unsigned char contents[SI_MAX_MESSAGE_LENGTH];
-} si_message;
+typedef (unsigned char) byte;
 
+typedef struct {
+  byte length;
+  byte contents[SI_MAX_MESSAGE_LENGTH];
+} lora_message;
+
+typedef struct {
+  byte type;
+  union {
+    struct {
+      byte receiver_id;
+      lora_message message;
+    } send_message;
+    // command types not listed here have empty contents
+  } contents;
+} si_command;
+
+typedef struct {
+  byte type;
+  union {
+    struct { byte sent_successfully; } send_message;
+    struct {
+      byte num_messages;
+      lora_message *messages;
+    } poll_for_messages;
+    struct {
+      byte num_devices;
+      byte *device_ids;
+    } list_network_devices;
+    struct { byte sent_successfully; } send_kill_message;
+    struct { byte kill_device; } listen_for_kill_messages;
+    struct { byte end_of_status_messages; } stop_listening_for_kill_messages;
+  } contents;
+} si_reply;
