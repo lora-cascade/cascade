@@ -29,4 +29,6 @@ error_type get_error();
 
 packet_t* create_packet(uint8_t* data, uint8_t data_length);
 
+packet_t* create_ack();
+
 #endif  // PACKET_H_

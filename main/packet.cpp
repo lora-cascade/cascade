@@ -31,6 +31,7 @@ packet_t* create_packet(uint8_t* data, uint8_t data_length) {
         .sender_id = device_id,
         .message_id = last_message_id++,
         .data_length = data_length,
+        .command = SEND_MESSAGE,
     };
 
     if (data_length > 255 - sizeof(header_t)) {
@@ -38,9 +39,23 @@ packet_t* create_packet(uint8_t* data, uint8_t data_length) {
         return NULL;
     }
 
-    packet_t* packet = malloc(sizeof(header_t) + data_length);
+    packet_t* packet = (packet_t*)malloc(sizeof(header_t) + data_length);
     packet->header = header;
     memcpy(packet->data, data, data_length);
+
+    return packet;
+}
+
+packet_t* create_ack() {
+    header_t header = {
+        .sender_id = device_id,
+        .message_id = 0,
+        .data_length = 0,
+        .command = ACK,
+    };
+
+    packet_t* packet = (packet_t*)malloc(sizeof(header_t));
+    packet->header = header;
 
     return packet;
 }

@@ -1,13 +1,19 @@
 #include "lora_interface.h"
 #include <stdint.h>
+#include "esp_log.h"
+#include "freertos/portmacro.h"
 #include "freertos/projdefs.h"
 #include "packet.h"
+#include <deque>
+#include <algorithm>
 
 static TaskHandle_t handle_interrupt;
 
 static QueueHandle_t receive_queue;
 
 static QueueHandle_t send_queue;
+
+static int64_t time_finished;
 
 static void pop_queue(QueueHandle_t* handle);
 
@@ -19,7 +25,13 @@ static void add_message(packet_t* packet);
 
 static void task_handler(void* arg);
 
-int32_t backoff_round = 0;
+static int32_t backoff_round = 0;
+
+static SemaphoreHandle_t semaphore;
+
+static BaseType_t wakeTask = pdFALSE;
+
+static bool got_data = false;
 
 static int64_t get_wait_time() {
     int32_t upper_bound = 1;
@@ -27,9 +39,22 @@ static int64_t get_wait_time() {
     for (int i = 0; i < backoff_round; i++) {
         upper_bound *= 2;
     }
-    int32_t wait_slots = rand() % upper_bound;
+    int32_t wait_slots = (int)LoRa.random() % upper_bound;
+    printf("WAIT SLOTS: %ld\n", wait_slots);
 
-    return CSMA_SLOT_TIME_US * (int64_t)wait_slots;
+    return CSMA_SLOT_TIME_MS * (int64_t)wait_slots + 1;
+}
+
+static void handle_cad(bool input) {
+    if (input) {
+        LoRa.receive();
+        got_data = true;
+        // ESP_DRAM_LOGE("sx127x", "receiving\n");
+    } else {
+        xSemaphoreGiveFromISR(semaphore, &wakeTask);
+        LoRa.channelActivityDetection();
+        portYIELD_FROM_ISR(wakeTask);
+    }
 }
 
 static int64_t get_current_time_us() {
@@ -38,71 +63,77 @@ static int64_t get_current_time_us() {
     return (int64_t)val.tv_usec;
 }
 
-static void handle_receive() {
-    packet_t* packet = malloc(256);
-    lora_receive_packet((uint8_t*)packet, 256);
+static void handle_receive(int size) {
+    /* printf("receiving data\n"); */
+    // ESP_DRAM_LOGE("sx127x", "%d\n", size);
+    xSemaphoreTakeFromISR(semaphore, &wakeTask);
+    packet_t* packet = (packet_t*)malloc(size);
+    for (int i = 0; i < size; i++) {
+        ((uint8_t*)packet)[i] = LoRa.read();
+    }
     add_message(packet);
+    got_data = false;
+    xSemaphoreGiveFromISR(semaphore, &wakeTask);
+    LoRa.channelActivityDetection();
+}
+
+static bool timeout_done() {
+    printf("done\n");
+    return time_finished - get_current_time_us() < 5;
 }
 
 static void handle_send() {
-    printf("sending message\n");
-    vTaskDelay(100);
+    // printf("sending message\n");
+    LoRa.idle();
     data_t data = get_next_message();
     if (data.data != NULL) {
-        lora_send_packet(data.data, data.size);
+        if (!LoRa.beginPacket()) {
+            add_message((packet_t*)data.data);
+            LoRa.channelActivityDetection();
+            return;
+        }
+        LoRa.write(data.data, data.size);
+        LoRa.endPacket();
         free(data.data);
     } else {
         printf("why null\n");
     }
+    LoRa.channelActivityDetection();
 }
 
 static void task_handler(void* arg) {
     while (1) {
-        lora_receive();
-        if (lora_received()) {
-            handle_receive();
-        } else if (has_next_message()) {
-            handle_send();
+        if (has_next_message()) {
+            if(xSemaphoreTake(semaphore, 0) == pdTRUE && !got_data) {
+                backoff_round = 0;
+                handle_send();
+            } else {
+                backoff_round++;
+                vTaskDelay(get_wait_time() / portTICK_PERIOD_MS);
+            }
         }
         vTaskDelay(1);
     }
 }
 
 int32_t init_lora() {
-    srand(esp_random());
     receive_queue = xQueueCreate(MAX_QUEUE_SIZE, sizeof(packet_t*));
     send_queue = xQueueCreate(MAX_QUEUE_SIZE, sizeof(packet_t*));
+    semaphore = xSemaphoreCreateBinary();
 
-    if (lora_init() == 0) {
+    SPI.begin(5, 19, 27);
+    LoRa.setPins(18, 23, 26);
+
+    if (LoRa.begin(FREQUENCY) == 0) {
         return -1;
     }
 
-#if CONFIG_169MHZ
-    ESP_LOGI(pcTaskGetName(NULL), "Frequency is 169MHz");
-    lora_set_frequency(169e6);  // 169MHz
-#elif CONFIG_433MHZ
-    ESP_LOGI(pcTaskGetName(NULL), "Frequency is 433MHz");
-    lora_set_frequency(433e6);  // 433MHz
-#elif CONFIG_470MHZ
-    ESP_LOGI(pcTaskGetName(NULL), "Frequency is 470MHz");
-    lora_set_frequency(470e6);  // 470MHz
-#elif CONFIG_866MHZ
-    ESP_LOGI(pcTaskGetName(NULL), "Frequency is 866MHz");
-    lora_set_frequency(866e6);  // 866MHz
-#elif CONFIG_915MHZ
-    ESP_LOGI(pcTaskGetName(NULL), "Frequency is 915MHz");
-    lora_set_frequency(915e6);  // 915MHz
-#elif CONFIG_OTHER
-    ESP_LOGI(pcTaskGetName(NULL), "Frequency is %dMHz", CONFIG_OTHER_FREQUENCY);
-    long frequency = CONFIG_OTHER_FREQUENCY * 1000000;
-    lora_set_frequency(frequency);
-#endif
-    lora_enable_crc();
+    LoRa.setSyncWord(SYNCWORD);
+    LoRa.enableCrc();
 
-    lora_set_coding_rate(CODING_RATE);
-    lora_set_bandwidth(BANDWIDTH);
-    lora_set_spreading_factor(SPREADING_FACTOR);
-    lora_set_sync_word(SYNCWORD);
+    LoRa.onCadDone(handle_cad);
+    LoRa.onReceive(handle_receive);
+    LoRa.channelActivityDetection();
 
     BaseType_t task_code = xTaskCreatePinnedToCore(task_handler, "handle lora", 8196, NULL, 2, &handle_interrupt, 1);
     if (task_code != pdPASS) {
