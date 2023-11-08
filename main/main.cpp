@@ -1,9 +1,9 @@
 #include <stdlib.h>
-#include "example.h"
-#include "lora.h"
+#include "lora_interface.h"
 #include "esp_random.h"
+#include "example.h"
 
-void app_main() {
+extern "C" void app_main() {
     int32_t result = init_lora();
     srand(esp_random());
     example();

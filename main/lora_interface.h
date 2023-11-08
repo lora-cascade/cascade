@@ -17,9 +17,10 @@
 #include "freertos/projdefs.h"
 #include "hal/spi_types.h"
 #include "packet.h"
-#include <lora.h>
+#include <LoRa.h>
 #include <sys/time.h>
 #include <esp_random.h>
+#include <math.h>
 
 #define SCK 5
 #define MISO 19
@@ -28,6 +29,7 @@
 #define RST 23
 #define DIO0 26
 
+#define FREQUENCY 915E6
 #define SYNCWORD 37
 #define SPREADING_FACTOR 7
 #define BANDWIDTH 7
@@ -35,7 +37,7 @@
 
 #define MAX_QUEUE_SIZE 100
 
-#define CSMA_SLOT_TIME_US (int64_t)20
+#define CSMA_SLOT_TIME_MS (int64_t)20
 
 int get_size();
 
