@@ -2,6 +2,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cstddef>
+#include <set>
+#include "command.h"
 
 static uint8_t device_id = 0;
 static bool changed_device_id = false;
@@ -56,6 +59,39 @@ packet_t* create_ack() {
 
     packet_t* packet = (packet_t*)malloc(sizeof(header_t));
     packet->header = header;
+
+    return packet;
+}
+
+packet_t* create_join() {
+    header_t header = {
+        .sender_id = device_id,
+        .message_id = 0,
+        .data_length = 0,
+        .command = JOIN_NETWORK,
+    };
+
+    packet_t* packet = (packet_t*)malloc(sizeof(header_t));
+    packet->header = header;
+
+    return packet;
+}
+
+packet_t* create_join_return(std::set<uint8_t>& known_ids) {
+    header_t header = {
+        .sender_id = device_id,
+        .message_id = 0,
+        .data_length = (uint8_t)known_ids.size(),
+        .command = ACK_NETWORK,
+    };
+
+    packet_t* packet = (packet_t*)malloc(sizeof(header_t) + known_ids.size());
+    packet->header = header;
+    int i = 0;
+    for(auto id : known_ids) {
+        packet->data[i] = id;
+        i++;
+    }
 
     return packet;
 }

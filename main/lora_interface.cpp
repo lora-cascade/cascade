@@ -1,11 +1,13 @@
 #include "lora_interface.h"
 #include <stdint.h>
+#include "command.h"
 #include "esp_log.h"
 #include "freertos/portmacro.h"
 #include "freertos/projdefs.h"
 #include "packet.h"
 #include <deque>
 #include <algorithm>
+#include <set>
 
 static TaskHandle_t handle_interrupt;
 
@@ -32,6 +34,8 @@ static SemaphoreHandle_t semaphore;
 static BaseType_t wakeTask = pdFALSE;
 
 static bool got_data = false;
+
+static std::set<uint8_t> known_ids;
 
 static int64_t get_wait_time() {
     int32_t upper_bound = 1;
@@ -70,6 +74,10 @@ static void handle_receive(int size) {
     packet_t* packet = (packet_t*)malloc(size);
     for (int i = 0; i < size; i++) {
         ((uint8_t*)packet)[i] = LoRa.read();
+    }
+    switch(packet->header.command) {
+        case SEND_MESSAGE:
+            add_message(packet);
     }
     add_message(packet);
     got_data = false;
