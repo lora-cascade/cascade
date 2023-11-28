@@ -55,3 +55,7 @@ typedef struct {
     struct { byte end_of_status_messages; } stop_listening_for_kill_messages;
   } contents;
 } si_reply;
+
+void initialize_uart(uart_port_t u);
+void read_commands_from_uart_task(void *params);
+void write_replies_to_uart_task(void *params);

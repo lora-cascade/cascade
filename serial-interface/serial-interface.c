@@ -1,5 +1,48 @@
 #include "serial-interface.h"
 
+// note: blocks task until requested number of bytes are available
+void readbytes(uart_port_t u, byte *data, size_t len)
+{
+    // wait until all bytes are available to read
+    size_t available;
+    while (1) {
+        uart_get_buffered_data_len(u, &available);
+        if (available >= len)
+            break;
+        taskYIELD(); // give up control to another task
+    }
+    
+    uart_read_bytes(u, data, len, 0);
+}
+
+// pointless wrapper around uart_write_bytes
+void writebytes(uart_port_t u, byte *data, size_t len)
+{
+    uart_write_bytes(u, data, len);
+}
+
+void initialize_uart(uart_port_t u)
+{
+    // configure UART (based on example from ESP32 documentation)
+    uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS,
+        .rx_flow_ctrl_thresh = 122,
+    };
+    ESP_ERROR_CHECK(uart_param_config(u, &uart_config));
+    // TODO: change pin numbers
+    ESP_ERROR_CHECK(uart_set_pin(u, 4, 5, 18, 19));
+    // Setup UART buffered IO with event queue
+    const int uart_buffer_size = (1024 * 2);
+    QueueHandle_t uart_queue;
+    // Install UART driver using an event queue here
+    ESP_ERROR_CHECK(uart_driver_install(u, uart_buffer_size,   \
+                                        uart_buffer_size, 10, &uart_queue, 0));
+}
+
 /*
   The first parameter should be a UART port number to read from.
   The second should be a queue to put commands into.
@@ -88,53 +131,5 @@ void write_replies_to_uart_task(void *params)
     }
 }
 
-void initialize_uart(uart_port_t u)
-{
-    // configure UART (based on example from ESP32 documentation)
-    uart_config_t uart_config = {
-        .baud_rate = 115200,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS,
-        .rx_flow_ctrl_thresh = 122,
-    };
-    ESP_ERROR_CHECK(uart_param_config(u, &uart_config));
-    // TODO: change pin numbers
-    ESP_ERROR_CHECK(uart_set_pin(u, 4, 5, 18, 19));
-    // Setup UART buffered IO with event queue
-    const int uart_buffer_size = (1024 * 2);
-    QueueHandle_t uart_queue;
-    // Install UART driver using an event queue here
-    ESP_ERROR_CHECK(uart_driver_install(u, uart_buffer_size,   \
-                                        uart_buffer_size, 10, &uart_queue, 0));
-   
-}
 
-// blocks task until requested number of bytes are available
-void readbytes(uart_port_t u, byte *data, size_t len)
-{
-    // wait until all bytes are available to read
-    size_t available;
-    while (1) {
-        uart_get_buffered_data_len(u, &available);
-        if (available >= len)
-            break;
-        taskYIELD(); // give up control to another task
-    }
-    
-    uart_read_bytes(u, data, len, 0);
-}
-
-// pointless wrapper around uart_write_bytes
-void writebytes(uart_port_t u, byte *data, size_t len)
-{
-    uart_write_bytes(u, data, len);
-}
-
-void getbytes(byte *data, size_t len)
-{
-    while (uart_read_bytes(UART, data, len, 1000) == -1)
-        ; // if timeout occurs, try again
-}
 
