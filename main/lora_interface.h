@@ -45,6 +45,8 @@ int32_t init_lora();
 
 int16_t send_message(uint8_t* message, uint8_t data_length);
 
+int16_t send_directed_message(uint8_t* message, uint8_t data_length, uint8_t target);
+
 packet_t* get_message();
 
 bool has_message();

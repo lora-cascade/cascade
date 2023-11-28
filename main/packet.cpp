@@ -95,3 +95,24 @@ packet_t* create_join_return(std::set<uint8_t>& known_ids) {
 
     return packet;
 }
+
+packet_t* create_directed_packet(uint8_t* data, uint8_t data_length, uint8_t receiver_id) {
+    header_t header = {
+        .sender_id = device_id,
+        .message_id = last_message_id++,
+        .data_length = data_length,
+        .command = DIRECTED_MESSAGE,
+    };
+
+    if (data_length > 255 - sizeof(header_t) - 1) {
+        set_error(LARGE_PACKET);
+        return NULL;
+    }
+
+    directed_packet_t* packet = (directed_packet_t*)malloc(sizeof(header_t) + data_length);
+    packet->receiver_id = receiver_id;
+    packet->header = header;
+    memcpy(packet->data, data, data_length);
+
+    return (packet_t*)packet;
+}
