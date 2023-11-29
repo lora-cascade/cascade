@@ -17,14 +17,20 @@ typedef struct {
 
 typedef struct {
     header_t header;
-    uint8_t data[];
+    uint8_t data[250];
 } __attribute__((packed)) packet_t;
 
 typedef struct {
     header_t header;
     uint8_t receiver_id;
-    uint8_t data[];
+    uint8_t data[249];
 } __attribute__((packed)) directed_packet_t;
+
+typedef struct {
+    header_t header;
+    uint8_t kill;
+    uint8_t filler[249];
+} __attribute__((packed)) kill_packet_t;
 
 uint8_t get_device_id();
 
@@ -34,14 +40,16 @@ void set_error(error_type err);
 
 error_type get_error();
 
-packet_t* create_packet(uint8_t* data, uint8_t data_length);
+packet_t create_packet(uint8_t* data, uint8_t data_length);
 
-packet_t* create_ack();
+packet_t create_ack();
 
-packet_t* create_join();
+packet_t create_join();
 
-packet_t* create_join_return(std::set<uint8_t>& known_ids);
+packet_t create_join_return(std::set<uint8_t>& known_ids);
 
-packet_t* create_directed_packet(uint8_t* data, uint8_t data_length, uint8_t receiver_id);
+packet_t create_directed_packet(uint8_t* data, uint8_t data_length, uint8_t receiver_id);
+
+packet_t create_kill_packet(uint8_t status);
 
 #endif  // PACKET_H_

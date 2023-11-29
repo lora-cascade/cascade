@@ -29,7 +29,7 @@ error_type get_error() {
     return error;
 }
 
-packet_t* create_packet(uint8_t* data, uint8_t data_length) {
+packet_t create_packet(uint8_t* data, uint8_t data_length) {
     header_t header = {
         .sender_id = device_id,
         .message_id = last_message_id++,
@@ -39,17 +39,17 @@ packet_t* create_packet(uint8_t* data, uint8_t data_length) {
 
     if (data_length > 255 - sizeof(header_t)) {
         set_error(LARGE_PACKET);
-        return NULL;
+        return {};
     }
 
-    packet_t* packet = (packet_t*)malloc(sizeof(header_t) + data_length);
-    packet->header = header;
-    memcpy(packet->data, data, data_length);
+    packet_t packet;
+    packet.header = header;
+    memcpy(&packet.data, data, data_length);
 
     return packet;
 }
 
-packet_t* create_ack() {
+packet_t create_ack() {
     header_t header = {
         .sender_id = device_id,
         .message_id = 0,
@@ -57,13 +57,13 @@ packet_t* create_ack() {
         .command = ACK,
     };
 
-    packet_t* packet = (packet_t*)malloc(sizeof(header_t));
-    packet->header = header;
+    packet_t packet;
+    packet.header = header;
 
     return packet;
 }
 
-packet_t* create_join() {
+packet_t create_join() {
     header_t header = {
         .sender_id = device_id,
         .message_id = 0,
@@ -71,13 +71,13 @@ packet_t* create_join() {
         .command = JOIN_NETWORK,
     };
 
-    packet_t* packet = (packet_t*)malloc(sizeof(header_t));
-    packet->header = header;
+    packet_t packet;
+    packet.header = header;
 
     return packet;
 }
 
-packet_t* create_join_return(std::set<uint8_t>& known_ids) {
+packet_t create_join_return(std::set<uint8_t>& known_ids) {
     header_t header = {
         .sender_id = device_id,
         .message_id = 0,
@@ -85,18 +85,18 @@ packet_t* create_join_return(std::set<uint8_t>& known_ids) {
         .command = ACK_NETWORK,
     };
 
-    packet_t* packet = (packet_t*)malloc(sizeof(header_t) + known_ids.size());
-    packet->header = header;
+    packet_t packet;
+    packet.header = header;
     int i = 0;
     for(auto id : known_ids) {
-        packet->data[i] = id;
+        packet.data[i] = id;
         i++;
     }
 
     return packet;
 }
 
-packet_t* create_directed_packet(uint8_t* data, uint8_t data_length, uint8_t receiver_id) {
+packet_t create_directed_packet(uint8_t* data, uint8_t data_length, uint8_t receiver_id) {
     header_t header = {
         .sender_id = device_id,
         .message_id = last_message_id++,
@@ -106,13 +106,28 @@ packet_t* create_directed_packet(uint8_t* data, uint8_t data_length, uint8_t rec
 
     if (data_length > 255 - sizeof(header_t) - 1) {
         set_error(LARGE_PACKET);
-        return NULL;
+        return {};
     }
 
-    directed_packet_t* packet = (directed_packet_t*)malloc(sizeof(header_t) + data_length);
-    packet->receiver_id = receiver_id;
-    packet->header = header;
-    memcpy(packet->data, data, data_length);
+    directed_packet_t packet;
+    packet.receiver_id = receiver_id;
+    packet.header = header;
+    memcpy(&packet.data, data, data_length);
 
-    return (packet_t*)packet;
+    return *(packet_t*)&packet;
+}
+
+packet_t create_kill_packet(uint8_t status) {
+    header_t header = {
+        .sender_id = device_id,
+        .message_id = last_message_id++,
+        .data_length = 0,
+        .command = KILL_MESSAGE,
+    };
+
+    kill_packet_t packet;
+    packet.kill = status;
+    packet.header = header;
+
+    return *(packet_t*)&packet;
 }

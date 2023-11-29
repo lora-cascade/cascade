@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 typedef struct {
-    uint8_t* data;
+    uint8_t data[255];
     uint8_t size;
 } data_t;
 

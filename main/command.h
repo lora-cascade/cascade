@@ -7,6 +7,7 @@ typedef enum {
     JOIN_NETWORK = 0x02,
     ACK_NETWORK = 0x03,
     DIRECTED_MESSAGE = 0x04,
+    KILL_MESSAGE = 0x05,
 } command;
 
 #endif  // COMMANDS_H_

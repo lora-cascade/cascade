@@ -17,11 +17,9 @@ static QueueHandle_t receive_queue;
 
 static QueueHandle_t send_queue;
 
-static int64_t time_finished;
-
 static void pop_queue(QueueHandle_t* handle);
 
-static data_t get_next_message();
+static bool get_next_message(data_t* data);
 
 static bool has_next_message();
 
@@ -35,19 +33,15 @@ static int32_t backoff_round = 0;
 
 static SemaphoreHandle_t semaphore;
 
-static BaseType_t wakeTask = pdFALSE;
-
 static bool got_data = false;
 
 static int64_t timeout = 0;
 
-static bool send_join = false;
-
-static int join_counter = 0;
-
 static std::set<uint8_t> known_ids;
 
 static std::map<uint8_t, uint16_t> last_messages;
+
+static bool kill_status = true;
 
 static int64_t get_wait_time() {
     int32_t upper_bound = 1;
@@ -55,7 +49,7 @@ static int64_t get_wait_time() {
     for (int i = 0; i < backoff_round; i++) {
         upper_bound *= 2;
     }
-    int32_t wait_slots = (int)LoRa.random() % upper_bound;
+    int32_t wait_slots = (int)random() % upper_bound;
     printf("WAIT SLOTS: %ld\n", wait_slots);
 
     return CSMA_SLOT_TIME_MS * (int64_t)wait_slots + 1;
@@ -69,15 +63,12 @@ static int64_t get_current_time_us() {
 
 static void handle_cad(bool input) {
     if (input) {
-        // xSemaphoreTakeFromISR(semaphore, &wakeTask);
         timeout = get_current_time_us();
         LoRa.receive();
         got_data = true;
         ESP_DRAM_LOGE("sx127x", "receiving\n");
     } else {
-        // xSemaphoreGiveFromISR(semaphore, &wakeTask);
         got_data = false;
-        // ESP_DRAM_LOGE("sx127x", "listening\n");
         LoRa.channelActivityDetection();
     }
 }
@@ -92,91 +83,99 @@ static void parse_received_nodes(packet_t* packet) {
 }
 
 static void handle_receive(int size) {
-    /* printf("receiving data\n"); */
-    if(size < sizeof(header_t)) {
+    if (size < sizeof(header_t)) {
         ESP_DRAM_LOGE("sx127x", "Error: bad packet");
+        return;
     }
-    packet_t* packet = (packet_t*)malloc(size);
+    packet_t packet;
     for (int i = 0; i < size; i++) {
-        ((uint8_t*)packet)[i] = LoRa.read();
+        ((uint8_t*)&packet)[i] = LoRa.read();
     }
-    switch (packet->header.command) {
+    switch (packet.header.command) {
         case SEND_MESSAGE: {
             // check if not repeated message
-            if (last_messages.find(packet->header.sender_id) == last_messages.end() ||
-                last_messages[packet->header.sender_id] < packet->header.message_id) {
-                last_messages[packet->header.sender_id] = packet->header.message_id;
-                add_message(packet);
-                add_send_message(packet);
+            if (last_messages.find(packet.header.sender_id) == last_messages.end() ||
+                last_messages[packet.header.sender_id] < packet.header.message_id) {
+                last_messages[packet.header.sender_id] = packet.header.message_id;
+                add_message(&packet);
+                add_send_message(&packet);
             }
             break;
         }
         case JOIN_NETWORK: {
-            ESP_DRAM_LOGE("lora", "new node %d\n", packet->header.sender_id);
-            packet_t* join_return = create_join_return(known_ids);
-            add_send_message(join_return);
-            known_ids.insert(packet->header.sender_id);
+            ESP_DRAM_LOGE("lora", "new node %d\n", packet.header.sender_id);
+            packet_t join_return = create_join_return(known_ids);
+            add_send_message(&join_return);
+            known_ids.insert(packet.header.sender_id);
+            last_messages.erase(packet.header.sender_id);
             break;
         }
         case ACK_NETWORK: {
-            ESP_DRAM_LOGE("lora", "new node %d with known %d\n", packet->header.sender_id, packet->header.data_length);
-            parse_received_nodes(packet);
+            ESP_DRAM_LOGE("lora", "new node %d with known %d\n", packet.header.sender_id, packet.header.data_length);
+            parse_received_nodes(&packet);
+            break;
+        }
+        case KILL_MESSAGE: {
+            // not repeated message
+            kill_packet_t* kill_packet = (kill_packet_t*)&packet;
+            if (last_messages.find(packet.header.sender_id) == last_messages.end() ||
+                last_messages[packet.header.sender_id] <= packet.header.message_id) {
+                last_messages[packet.header.sender_id] = packet.header.message_id;
+                kill_status = kill_packet->kill;
+                add_send_message(&packet);
+            }
             break;
         }
         case DIRECTED_MESSAGE: {
             // not repeated message
-            if (last_messages.find(packet->header.sender_id) == last_messages.end() ||
-                last_messages[packet->header.sender_id] < packet->header.message_id) {
-                last_messages[packet->header.sender_id] = packet->header.message_id;
-                if (((directed_packet_t*)packet)->receiver_id == get_device_id()) {
+            if (last_messages.find(packet.header.sender_id) == last_messages.end() ||
+                last_messages[packet.header.sender_id] <= packet.header.message_id) {
+                last_messages[packet.header.sender_id] = packet.header.message_id;
+                if (((directed_packet_t*)&packet)->receiver_id == get_device_id()) {
                     // we are the receiver so store it
-                    add_message(packet);
-                } else if (packet->header.sender_id != get_device_id()) {
+                    add_message(&packet);
+                } else if (packet.header.sender_id != get_device_id()) {
                     // we are not the receiver so pass it on
-                    ESP_DRAM_LOGE("lora", "passing message from %d\n", packet->header.sender_id);
-                    add_send_message(packet);
+                    ESP_DRAM_LOGE("lora", "passing message from %d\n", packet.header.sender_id);
+                    add_send_message(&packet);
                 }
+            } else {
+                ESP_DRAM_LOGE("sx127x", "old data %d\n", packet.header.message_id);
             }
             break;
         }
     }
     got_data = false;
-    // xSemaphoreGiveFromISR(semaphore, &wakeTask);
     LoRa.channelActivityDetection();
 }
 
-static bool timeout_done() {
-    printf("done\n");
-    return time_finished - get_current_time_us() < 5;
-}
-
 static void handle_send() {
-    // printf("sending message\n");
     LoRa.idle();
-    data_t data = get_next_message();
-    if (data.data != NULL) {
+    data_t data;
+    bool result = get_next_message(&data);
+    if (result) {
         if (!LoRa.beginPacket()) {
-            add_message((packet_t*)data.data);
+            add_message((packet_t*)&data.data);
             LoRa.channelActivityDetection();
             return;
         }
         if (((packet_t*)data.data)->header.command == ACK_NETWORK) {
             printf("sending ack\n");
         }
+        printf("size %d\n", data.size);
+        printf("Received message id %.*s\n", data.size - 5, data.data + 5);
         LoRa.write(data.data, data.size);
         LoRa.endPacket();
-        free(data.data);
     } else {
         printf("why null\n");
     }
-    // xSemaphoreGive(semaphore);
     LoRa.channelActivityDetection();
 }
 
 static void task_handler(void* arg) {
     while (1) {
         if (has_next_message()) {
-            if (!got_data) {  // xSemaphoreTake(semaphore, 0) == pdTRUE) {  //&& !got_data) {
+            if (!got_data) {
                 backoff_round = 0;
                 handle_send();
             } else {
@@ -192,8 +191,8 @@ static void task_handler(void* arg) {
 }
 
 int32_t init_lora() {
-    receive_queue = xQueueCreate(MAX_QUEUE_SIZE, sizeof(packet_t*));
-    send_queue = xQueueCreate(MAX_QUEUE_SIZE, sizeof(packet_t*));
+    receive_queue = xQueueCreate(MAX_QUEUE_SIZE, sizeof(packet_t));
+    send_queue = xQueueCreate(MAX_QUEUE_SIZE, sizeof(packet_t));
     semaphore = xSemaphoreCreateBinary();
     xSemaphoreGive(semaphore);
 
@@ -217,28 +216,33 @@ int32_t init_lora() {
     }
 
     for (int i = 0; i < 5; i++) {
-        packet_t* join_return = create_join();
-        add_send_message(join_return);
+        packet_t join_return = create_join();
+        add_send_message(&join_return);
     }
 
     return 0;
 }
 
-static data_t get_next_message() {
-    packet_t* packet = NULL;
-    if (xQueueReceiveFromISR(send_queue, &packet, 0) != pdTRUE) {
-        data_t data = {
-            .data = NULL,
-            .size = 0,
-        };
-        return data;
+static uint8_t packet_size_adjustment(uint8_t command) {
+    switch (command) {
+        case KILL_MESSAGE:
+        case DIRECTED_MESSAGE:
+            return 1;
+        default:
+            return 0;
     }
-    uint8_t data_size = sizeof(header_t) + packet->header.data_length;
-    data_t data = {
-        .data = (uint8_t*)packet,
-        .size = data_size,
-    };
-    return data;
+}
+
+static bool get_next_message(data_t* data) {
+    packet_t packet;
+    if (xQueueReceiveFromISR(send_queue, &packet, 0) != pdTRUE) {
+        return false;
+    }
+    uint8_t size = sizeof(header_t) + packet.header.data_length + packet_size_adjustment(packet.header.command);
+    memcpy(&data->data, &packet, size);
+    data->size = size;
+
+    return true;
 }
 
 int get_size() {
@@ -250,50 +254,51 @@ static bool has_next_message() {
 }
 
 static void add_message(packet_t* data) {
-    if (xQueueSendFromISR(receive_queue, &data, 0) != pdTRUE) {
+    if (xQueueSendFromISR(receive_queue, data, 0) != pdTRUE) {
         pop_queue(&receive_queue);
-        xQueueSendFromISR(receive_queue, &data, 0);
+        xQueueSendFromISR(receive_queue, data, 0);
     }
 }
 
 static void pop_queue(QueueHandle_t* handle) {
-    packet_t* data = NULL;
+    packet_t data;
     xQueueReceiveFromISR(*handle, &data, 0);
-    if (data != NULL) {
-        free(data);
-    }
 }
 
 static void add_send_message(packet_t* data) {
-    if (xQueueSendFromISR(send_queue, &data, 0) != pdTRUE) {
+    if (xQueueSendFromISR(send_queue, data, 0) != pdTRUE) {
         pop_queue(&send_queue);
-        xQueueSendFromISR(send_queue, &data, 0);
+        xQueueSendFromISR(send_queue, data, 0);
     }
 }
 
 int16_t send_message(uint8_t* message, uint8_t data_length) {
-    packet_t* packet = create_packet(message, data_length);
-    add_send_message(packet);
+    packet_t packet = create_packet(message, data_length);
+    add_send_message(&packet);
 
-    return packet->header.message_id;
+    return packet.header.message_id;
 }
 
 int16_t send_directed_message(uint8_t* message, uint8_t data_length, uint8_t target) {
-    packet_t* packet = create_directed_packet(message, data_length, target);
-    add_send_message(packet);
+    packet_t packet = create_directed_packet(message, data_length, target);
+    add_send_message(&packet);
 
-    return packet->header.message_id;
+    return packet.header.message_id;
 }
 
 bool has_message() {
     return uxQueueMessagesWaitingFromISR(receive_queue) != 0;
 }
 
-// returns data allocated by malloc
-packet_t* get_message() {
-    packet_t* data;
-    if (xQueueReceiveFromISR(receive_queue, &data, 0) != pdTRUE) {
-        return NULL;
+packet_t get_message() {
+    packet_t data;
+    if (xQueueReceive(receive_queue, &data, 0) != pdTRUE) {
+        return {};
     }
+    printf("size %d\n", data.header.sender_id);
     return data;
+}
+
+bool get_kill_status() {
+    return kill_status;
 }
