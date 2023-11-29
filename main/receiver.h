@@ -8,9 +8,8 @@ void receiver() {
     while(1) {
         vTaskDelay(1);
         if(has_message()) {
-            packet_t* message = get_message();
-            printf("Received message id %d: %.*s\n", message->header.message_id, message->header.data_length, message->data);
-            free(message);
+            packet_t message = get_message();
+            printf("Received message id %d: %.*s\n", message.header.message_id, message.header.data_length, message.data + 1);
         }
     }
 }
