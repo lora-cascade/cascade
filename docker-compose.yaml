@@ -1,0 +1,13 @@
+version: "3"
+services:
+  cascade_builder:
+    image: espressif/idf:release-v5.1
+    container_name: cascade_builder
+    user: "1000:1000"
+    volumes:
+      - .:/app/
+    working_dir: /app/
+    command: idf.py build
+    #command: idf.py flash -p /dev/ttyACM0
+    devices:
+      - "/dev/ttyACM0:/dev/ttyACM0"
