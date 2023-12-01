@@ -1,15 +1,19 @@
 #ifndef LORA_H_
 #define LORA_H_
 
+#include <LoRa.h>
 #include <driver/gpio.h>
 #include <driver/spi_common.h>
 #include <driver/spi_master.h>
 #include <esp_log.h>
+#include <esp_random.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include "common.h"
 #include "data.h"
 #include "driver/spi_master.h"
@@ -17,10 +21,6 @@
 #include "freertos/projdefs.h"
 #include "hal/spi_types.h"
 #include "packet.h"
-#include <LoRa.h>
-#include <sys/time.h>
-#include <esp_random.h>
-#include <math.h>
 
 #define SCK 5
 #define MISO 19
@@ -47,10 +47,16 @@ int16_t send_message(uint8_t* message, uint8_t data_length);
 
 int16_t send_directed_message(uint8_t* message, uint8_t data_length, uint8_t target);
 
+void send_packet(packet_t* packet);
+
 packet_t get_message();
+
+uint8_t get_message_count();
 
 bool has_message();
 
 bool get_kill_status();
+
+uint8_t get_devices(uint8_t* list);
 
 #endif  // LORA_H_

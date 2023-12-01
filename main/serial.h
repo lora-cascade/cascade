@@ -4,37 +4,99 @@
 #include <Arduino.h>
 #include <stdint.h>
 #include <vector>
+#include "freertos/projdefs.h"
 #include "lora_interface.h"
+#include "packet.h"
 
-void example() {
-    Serial.begin(115200);
-    Serial.write('\n');
-    std::vector<uint8_t> input;
-    while(1) {
-        vTaskDelay(1);
-        if(Serial.available() > 0) {
-            auto incoming = Serial.read();
-            Serial.write(incoming);
-            if(incoming != 13) {
-                input.push_back(incoming);
-            } else {
-                Serial.write('\n');
-                send_message(input.data(), input.size());
-                input.clear();
-            }
+bool listen_for_kill_state = false;
+
+void handle_send_kill_message() {
+    uint8_t status = Serial.read();
+    if(status != 0) {
+        status = 1;
+    }
+    packet_t kill_packet = create_kill_packet(status);
+    send_packet(&kill_packet);
+    Serial.write(0x01);
+}
+
+void handle_listen_state() {
+    if (Serial.available() > 0) {
+        uint8_t in = Serial.read();
+        if (in == 0x05) {
+            Serial.write(0x02);
+            listen_for_kill_state = false;
+            return;
         }
+    }
+    bool kill_status = get_kill_status();
+    Serial.write((uint8_t)kill_status);
+    vTaskDelay(pdMS_TO_TICKS(250));
+}
 
-        if(has_message()) {
-            auto* message = get_message();
-            /* printf("Received message %.*s\n", message->header.data_length, message->data); */
-            Serial.write("Received message ");
-            for(int i = 0; i < message->header.data_length; i++) {
-                Serial.write(message->data[i]);
-            }
-            Serial.write('\n');
-            free(message);
+void handle_list_devices() {
+    uint8_t list[255];
+    uint8_t count = get_devices(list);
+    Serial.write(count);
+    for (int i = 0; i < count; i++) {
+        Serial.write(list[i]);
+    }
+}
+
+void handle_poll_messages() {
+    uint8_t count = get_message_count();
+    Serial.write(count);
+    for (int i = 0; i < count; i++) {
+        packet_t packet = get_message();
+        Serial.write(packet.header.data_length);
+        for (int j = 0; j < packet.header.data_length; j++) {
+            Serial.write(packet.data[j]);
         }
     }
 }
 
-#endif // SERIAL_H_
+void handle_send_message() {
+    uint8_t receiver = Serial.read();
+    uint8_t length = Serial.read();
+    uint8_t message[255];
+    for(int i = 0; i < length; i ++) {
+        message[i] = Serial.read();
+    }
+    send_directed_message(message, length, receiver);
+    Serial.write(0x01);
+}
+
+void handle_serial() {
+    Serial.begin(115200);
+    while (1) {
+        vTaskDelay(1);
+        if (listen_for_kill_state)
+            handle_listen_state();
+        else if (Serial.available() > 0) {
+            uint8_t incoming = Serial.read();
+            switch (incoming) {
+                case 0x00:
+                    handle_send_message();
+                    break;
+                case 0x01:
+                    handle_poll_messages();
+                    break;
+                case 0x02:
+                    handle_list_devices();
+                    break;
+                case 0x03:
+                    handle_send_kill_message();
+                    break;
+                case 0x04:
+                    listen_for_kill_state = true;
+                    break;
+                case 0x05:
+                    Serial.write(0x02);
+                    break;
+            }
+            /* Serial.write(incoming); */
+        }
+    }
+}
+
+#endif  // SERIAL_H_
