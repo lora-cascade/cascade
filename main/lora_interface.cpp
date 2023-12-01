@@ -50,7 +50,7 @@ static int64_t get_wait_time() {
         upper_bound *= 2;
     }
     int32_t wait_slots = (int)random() % upper_bound;
-    printf("WAIT SLOTS: %ld\n", wait_slots);
+    // printf("WAIT SLOTS: %ld\n", wait_slots);
 
     return CSMA_SLOT_TIME_MS * (int64_t)wait_slots + 1;
 }
@@ -160,14 +160,14 @@ static void handle_send() {
             return;
         }
         if (((packet_t*)data.data)->header.command == ACK_NETWORK) {
-            printf("sending ack\n");
+        //     printf("sending ack\n");
         }
-        printf("size %d\n", data.size);
-        printf("Received message id %.*s\n", data.size - 5, data.data + 5);
+        // printf("size %d\n", data.size);
+        // printf("Received message id %.*s\n", data.size - 5, data.data + 5);
         LoRa.write(data.data, data.size);
         LoRa.endPacket();
     } else {
-        printf("why null\n");
+        // printf("why null\n");
     }
     LoRa.channelActivityDetection();
 }
@@ -183,7 +183,7 @@ static void task_handler(void* arg) {
                     got_data = false;
                 }
                 backoff_round++;
-                vTaskDelay((get_wait_time() + 3) / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(get_wait_time()+3));
             }
         }
         vTaskDelay(1);
@@ -210,7 +210,7 @@ int32_t init_lora() {
     LoRa.onReceive(handle_receive);
     LoRa.channelActivityDetection();
 
-    BaseType_t task_code = xTaskCreatePinnedToCore(task_handler, "handle lora", 8196, NULL, 2, &handle_interrupt, 1);
+    BaseType_t task_code = xTaskCreatePinnedToCore(task_handler, "handle lora", 8196, NULL, 2, &handle_interrupt, 0);
     if (task_code != pdPASS) {
         return -1;
     }
@@ -247,6 +247,14 @@ static bool get_next_message(data_t* data) {
 
 int get_size() {
     return uxQueueMessagesWaitingFromISR(send_queue);
+}
+
+uint8_t get_message_count() {
+    int count = uxQueueMessagesWaiting(receive_queue);
+    if(count >= 255) {
+        return 255;
+    }
+    return count;
 }
 
 static bool has_next_message() {
@@ -286,6 +294,21 @@ int16_t send_directed_message(uint8_t* message, uint8_t data_length, uint8_t tar
     return packet.header.message_id;
 }
 
+void send_packet(packet_t* packet) {
+    add_send_message(packet);
+}
+
+uint8_t get_devices(uint8_t* list) {
+    int j = 0;
+    for(uint8_t i : known_ids) {
+        if(j >= 255)
+            break;
+        list[j] = i;
+        j++;
+    }
+    return j;
+}
+
 bool has_message() {
     return uxQueueMessagesWaitingFromISR(receive_queue) != 0;
 }
@@ -295,9 +318,11 @@ packet_t get_message() {
     if (xQueueReceive(receive_queue, &data, 0) != pdTRUE) {
         return {};
     }
-    printf("size %d\n", data.header.sender_id);
+    // printf("size %d\n", data.header.sender_id);
     return data;
 }
+
+
 
 bool get_kill_status() {
     return kill_status;
