@@ -322,7 +322,9 @@ packet_t get_message() {
     return data;
 }
 
-
+void set_kill_status(uint8_t status) {
+    kill_status = status;
+}
 
 bool get_kill_status() {
     return kill_status;

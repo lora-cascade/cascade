@@ -55,6 +55,8 @@ uint8_t get_message_count();
 
 bool has_message();
 
+void set_kill_status(uint8_t status);
+
 bool get_kill_status();
 
 uint8_t get_devices(uint8_t* list);
