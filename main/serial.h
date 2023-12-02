@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <stdint.h>
 #include <vector>
+#include "command.h"
 #include "freertos/projdefs.h"
 #include "lora_interface.h"
 #include "packet.h"
@@ -15,6 +16,7 @@ void handle_send_kill_message() {
     if(status != 0) {
         status = 1;
     }
+    set_kill_status(status);
     packet_t kill_packet = create_kill_packet(status);
     send_packet(&kill_packet);
     Serial.write(0x01);
@@ -49,8 +51,12 @@ void handle_poll_messages() {
     for (int i = 0; i < count; i++) {
         packet_t packet = get_message();
         Serial.write(packet.header.data_length);
+        int offset = 0;
+        if(packet.header.command == DIRECTED_MESSAGE) {
+            offset = 1;
+        }
         for (int j = 0; j < packet.header.data_length; j++) {
-            Serial.write(packet.data[j]);
+            Serial.write(packet.data[j+1]);
         }
     }
 }
