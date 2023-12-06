@@ -103,7 +103,6 @@ static void handle_receive(int size) {
             break;
         }
         case JOIN_NETWORK: {
-            ESP_DRAM_LOGE("lora", "new node %d\n", packet.header.sender_id);
             packet_t join_return = create_join_return(known_ids);
             add_send_message(&join_return);
             known_ids.insert(packet.header.sender_id);
@@ -111,7 +110,6 @@ static void handle_receive(int size) {
             break;
         }
         case ACK_NETWORK: {
-            ESP_DRAM_LOGE("lora", "new node %d with known %d\n", packet.header.sender_id, packet.header.data_length);
             parse_received_nodes(&packet);
             break;
         }
@@ -136,11 +134,9 @@ static void handle_receive(int size) {
                     add_message(&packet);
                 } else if (packet.header.sender_id != get_device_id()) {
                     // we are not the receiver so pass it on
-                    ESP_DRAM_LOGE("lora", "passing message from %d\n", packet.header.sender_id);
                     add_send_message(&packet);
                 }
             } else {
-                ESP_DRAM_LOGE("sx127x", "old data %d\n", packet.header.message_id);
             }
             break;
         }
@@ -159,15 +155,8 @@ static void handle_send() {
             LoRa.channelActivityDetection();
             return;
         }
-        if (((packet_t*)data.data)->header.command == ACK_NETWORK) {
-        //     printf("sending ack\n");
-        }
-        // printf("size %d\n", data.size);
-        // printf("Received message id %.*s\n", data.size - 5, data.data + 5);
         LoRa.write(data.data, data.size);
         LoRa.endPacket();
-    } else {
-        // printf("why null\n");
     }
     LoRa.channelActivityDetection();
 }
@@ -318,7 +307,6 @@ packet_t get_message() {
     if (xQueueReceive(receive_queue, &data, 0) != pdTRUE) {
         return {};
     }
-    // printf("size %d\n", data.header.sender_id);
     return data;
 }
 

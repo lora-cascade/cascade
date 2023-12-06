@@ -6,8 +6,10 @@ services:
     user: "1000:1000"
     volumes:
       - .:/app/
+    environment:
+      - HOME=/tmp
     working_dir: /app/
     command: idf.py build
     #command: idf.py flash -p /dev/ttyACM0
-    devices:
-      - "/dev/ttyACM0:/dev/ttyACM0"
+    #devices:
+    #  - "/dev/ttyACM0:/dev/ttyACM0"
