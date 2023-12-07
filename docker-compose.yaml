@@ -10,6 +10,15 @@ services:
       - HOME=/tmp
     working_dir: /app/
     command: idf.py build
-    #command: idf.py flash -p /dev/ttyACM0
-    #devices:
-    #  - "/dev/ttyACM0:/dev/ttyACM0"
+  cascade_flasher:
+    image: espressif/idf:release-v5.1
+    container_name: cascade_flasher
+    user: "1000:1000"
+    volumes:
+      - .:/app/
+    environment:
+      - HOME=/tmp
+    working_dir: /app/
+    command: idf.py flash -p /dev/ttyACM0
+    devices:
+     - "/dev/ttyACM0:/dev/ttyACM0"
